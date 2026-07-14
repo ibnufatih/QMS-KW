@@ -84,6 +84,9 @@ document.addEventListener("DOMContentLoaded", () => {
     renderDatabaseTables();
     initCharts();
 
+    // Init dynamic fields and time constraint checks
+    checkRegistrationTimeConstraint();
+
     // Show role selector or auto-login based on URL parameter
     const urlParams = new URLSearchParams(window.location.search);
     const roleParam = urlParams.get('role');
@@ -114,23 +117,30 @@ function parseCustomDate(str) {
     return new Date(str);
 }
 
-// Calculate wait time in text format
+// Calculate wait time in HH:MM:SS format
 function getWaitTimeStr(timestampStr) {
-    if (!timestampStr) return "-";
+    if (!timestampStr) return "00:00:00";
     const start = parseCustomDate(timestampStr);
     const end = new Date();
     const diffMs = end - start;
-    if (diffMs < 0) return "0 min";
+    if (diffMs < 0) return "00:00:00";
     
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 60) {
-        return `${diffMins} min`;
-    } else {
-        const hours = Math.floor(diffMins / 60);
-        const mins = diffMins % 60;
-        return `${hours} jam ${mins} min`;
-    }
+    const diffSecs = Math.floor(diffMs / 1000);
+    const hrs = Math.floor(diffSecs / 3600);
+    const mins = Math.floor((diffSecs % 3600) / 60);
+    const secs = diffSecs % 60;
+    
+    const pad = (num) => String(num).padStart(2, '0');
+    return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
 }
+
+// Live update wait times for all active badges every second
+setInterval(() => {
+    document.querySelectorAll("[data-wait-start]").forEach(el => {
+        const start = el.dataset.waitStart;
+        el.innerText = getWaitTimeStr(start);
+    });
+}, 1000);
 
 // Role Management Logic
 function selectRole(role) {
@@ -487,10 +497,10 @@ function renderTriageWaiting() {
                 <div>
                     <strong style="color: white; font-size: 0.85rem;">${p.Nama_Penuh}</strong>
                     <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.15rem;">
-                        IC: ${p.No_IC} | KKM: ${p.Kakitangan_KKM}
+                        IC: ${p.No_IC} | Kakitangan: ${p.Kakitangan_KKM}
                     </div>
                     <div style="font-size: 0.7rem; color: var(--warning); margin-top: 0.15rem; display: flex; align-items: center; gap: 0.25rem;">
-                        <i data-lucide="clock" style="width: 12px; height: 12px;"></i> Tunggu: ${getWaitTimeStr(p.Timestamp)}
+                        <i data-lucide="clock" style="width: 12px; height: 12px;"></i> Tunggu: <span data-wait-start="${p.Timestamp}">${getWaitTimeStr(p.Timestamp)}</span>
                     </div>
                 </div>
                 <span class="badge badge-blue">${p.Nombor_Giliran}</span>
@@ -499,9 +509,9 @@ function renderTriageWaiting() {
         });
     }
 
-    // 2. Patients waiting for Doctor Call (assigned to rooms)
+    // 2. Patients waiting for Doctor Call (assigned to rooms, EXCLUDING NCD-Sample darah)
     const drListContainer = document.getElementById("triage-dr-waiting-list");
-    const drWaitingPatients = masterData.filter(p => p.Status_Giliran === "Menunggu Dr" || p.Status_Giliran === "Dipanggil");
+    const drWaitingPatients = masterData.filter(p => (p.Status_Giliran === "Menunggu Dr" || p.Status_Giliran === "Dipanggil") && p.Tujuan_Kehadiran !== "NCD-Sample darah");
     document.getElementById("count-dr-waiting-total").innerText = drWaitingPatients.length;
 
     drListContainer.innerHTML = "";
@@ -528,7 +538,7 @@ function renderTriageWaiting() {
                         Diagih ke: <span style="color: #60a5fa; font-weight: 600;">${roomLabel}</span> (${p.Nama_Doktor || '-'})
                     </div>
                     <div style="font-size: 0.7rem; color: var(--warning); margin-top: 0.15rem; display: flex; align-items: center; gap: 0.25rem;">
-                        <i data-lucide="clock" style="width: 12px; height: 12px;"></i> Tunggu: ${getWaitTimeStr(p.Masa_Triage_Selesai)}
+                        <i data-lucide="clock" style="width: 12px; height: 12px;"></i> Tunggu: <span data-wait-start="${p.Masa_Triage_Selesai}">${getWaitTimeStr(p.Masa_Triage_Selesai)}</span>
                     </div>
                 </div>
                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
@@ -539,8 +549,63 @@ function renderTriageWaiting() {
             drListContainer.appendChild(item);
         });
     }
+
+    // 3. NCD - Sampel Darah Patients List
+    const ncdListContainer = document.getElementById("triage-ncd-list");
+    const ncdPatients = masterData.filter(p => (p.Status_Giliran === "Menunggu Dr" || p.Status_Giliran === "Dipanggil") && p.Tujuan_Kehadiran === "NCD-Sample darah");
+    document.getElementById("count-ncd-total").innerText = ncdPatients.length;
+
+    ncdListContainer.innerHTML = "";
+    if (ncdPatients.length === 0) {
+        ncdListContainer.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 1rem 0;">
+                <i data-lucide="droplet" style="width: 20px; height: 20px; margin-bottom: 0.25rem;"></i>
+                <p style="font-size: 0.8rem;">Tiada pesakit NCD</p>
+            </div>
+        `;
+    } else {
+        ncdPatients.forEach(p => {
+            const item = document.createElement("div");
+            item.className = "patient-item";
+            item.style.cursor = "default";
+            
+            const badgeClass = p.Status_Giliran === "Dipanggil" ? "badge-purple" : "badge-orange";
+            const roomLabel = p.No_Bilik_Doktor || "Belum diagih";
+            
+            item.innerHTML = `
+                <div>
+                    <strong style="color: white; font-size: 0.85rem;">${p.Nama_Penuh}</strong>
+                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.15rem;">
+                        Diagih ke: <span style="color: #60a5fa; font-weight: 600;">${roomLabel}</span> (${p.Nama_Doktor || '-'})
+                    </div>
+                    <div style="font-size: 0.7rem; color: var(--warning); margin-top: 0.15rem; display: flex; align-items: center; gap: 0.25rem;">
+                        <i data-lucide="clock" style="width: 12px; height: 12px;"></i> Tunggu: <span data-wait-start="${p.Masa_Triage_Selesai}">${getWaitTimeStr(p.Masa_Triage_Selesai)}</span>
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
+                    <span class="badge badge-blue">${p.Nombor_Giliran}</span>
+                    <button class="btn btn-success" onclick="completeNcd('${p.Nombor_Giliran}')" style="padding: 0.15rem 0.5rem; font-size: 0.7rem; border-radius: 4px; font-weight: 700;">Selesai</button>
+                </div>
+            `;
+            ncdListContainer.appendChild(item);
+        });
+    }
     
     lucide.createIcons();
+}
+
+function completeNcd(qNum) {
+    const patient = masterData.find(p => p.Nombor_Giliran === qNum);
+    if (!patient) return;
+    
+    patient.Status_Giliran = "Discharge Home";
+    patient.Diagnosis = "NCD-Sampel darah diambil";
+    patient.Cuti_Sakit_Hari = 0;
+    
+    saveLocalStorage();
+    renderTriageWaiting();
+    renderDatabaseTables();
+    initCharts();
 }
 
 function parseIC(icStr) {
@@ -594,16 +659,41 @@ function evaluateVitals() {
         const sys = parseInt(parts[0]) || 0;
         const dia = parseInt(parts[1]) || 0;
         if (sys > 0 && dia > 0) {
-            if (sys >= 180 || dia >= 110) {
-                alertBp.innerText = "AMARAN: Krisis Hipertensi (Sangat Tinggi!)";
-                isRedTrigger = true;
-            } else if (sys >= 140 || dia >= 90) {
-                alertBp.innerText = "Tinggi: Hipertensi Tahap 1/2";
-                isYellowTrigger = true;
-                score += 2;
-            } else if (sys < 90 || dia < 60) {
-                alertBp.innerText = "Rendah: Hipotensi";
-                score += 1;
+            if (isPediatric) {
+                // Pediatric BP validation based on age
+                let minSys = 80;
+                let maxSys = 110;
+                if (age < 1) {
+                    minSys = 65; maxSys = 85;
+                } else if (age >= 1 && age < 3) {
+                    minSys = 70; maxSys = 90;
+                } else if (age >= 3 && age < 6) {
+                    minSys = 75; maxSys = 95;
+                } else if (age >= 6 && age < 12) {
+                    minSys = 80; maxSys = 105;
+                }
+                
+                if (sys < minSys) {
+                    alertBp.innerText = "Abnormal: Hipotensi Kanak-kanak (Bahaya!)";
+                    isRedTrigger = true;
+                } else if (sys > maxSys) {
+                    alertBp.innerText = "Tinggi: Hipertensi Kanak-kanak";
+                    isYellowTrigger = true;
+                    score += 2;
+                }
+            } else {
+                // Adult BP validation
+                if (sys >= 180 || dia >= 110) {
+                    alertBp.innerText = "AMARAN: Krisis Hipertensi (Sangat Tinggi!)";
+                    isRedTrigger = true;
+                } else if (sys >= 140 || dia >= 90) {
+                    alertBp.innerText = "Tinggi: Hipertensi Tahap 1/2";
+                    isYellowTrigger = true;
+                    score += 2;
+                } else if (sys < 90 || dia < 60) {
+                    alertBp.innerText = "Rendah: Hipotensi";
+                    score += 1;
+                }
             }
         }
     }
@@ -613,14 +703,33 @@ function evaluateVitals() {
     alertPulse.innerText = "";
     if (pulseVal > 0) {
         if (isPediatric) {
-            if (pulseVal > 140 || pulseVal < 60) {
-                alertPulse.innerText = "Abnormal Kanak-kanak: Kadar Nadi Bahaya!";
+            // Pediatric Heart Rate ranges:
+            // Infant (<1y): 110-160
+            // Toddler (1-2y): 100-150
+            // Preschool (3-5y): 90-140
+            // School Age (6-11y): 70-135
+            let minHR = 70;
+            let maxHR = 135;
+            if (age < 1) {
+                minHR = 110; maxHR = 160;
+            } else if (age >= 1 && age < 3) {
+                minHR = 100; maxHR = 150;
+            } else if (age >= 3 && age < 6) {
+                minHR = 90; maxHR = 140;
+            } else if (age >= 6 && age < 12) {
+                minHR = 70; maxHR = 135;
+            }
+
+            if (pulseVal < (minHR - 15) || pulseVal > (maxHR + 15)) {
+                alertPulse.innerText = "Abnormal: Kadar Nadi Kanak-kanak Kritikal!";
                 isRedTrigger = true;
-            } else if (pulseVal > 120 || pulseVal < 80) {
-                alertPulse.innerText = "Sederhana Abnormal (Kanak-kanak)";
-                score += 1;
+            } else if (pulseVal < minHR || pulseVal > maxHR) {
+                alertPulse.innerText = "Abnormal: Kadar Nadi Luar Julat Normal Kanak-kanak";
+                isYellowTrigger = true;
+                score += 2;
             }
         } else {
+            // Adult pulse
             if (pulseVal > 120 || pulseVal < 50) {
                 alertPulse.innerText = "Abnormal Dewasa: Kadar Nadi Bahaya!";
                 isRedTrigger = true;
@@ -652,14 +761,31 @@ function evaluateVitals() {
     alertResp.innerText = "";
     if (respVal > 0) {
         if (isPediatric) {
-            if (respVal > 40 || respVal < 15) {
-                alertResp.innerText = "Abnormal Kanak-kanak: Pernafasan Bahaya!";
+            // Pediatric RR ranges:
+            // Infant (<1y): 20-40
+            // Toddler (1-2y): 20-30
+            // Preschool (3-5y): 20-30
+            // School Age (6-11y): 15-25 (or 20-30 depending on age, 8-11y is 15-25)
+            let minRR = 15;
+            let maxRR = 25;
+            if (age < 1) {
+                minRR = 20; maxRR = 40;
+            } else if (age >= 1 && age < 8) {
+                minRR = 20; maxRR = 30;
+            } else if (age >= 8 && age < 12) {
+                minRR = 15; maxRR = 25;
+            }
+
+            if (respVal < (minRR - 5) || respVal > (maxRR + 10)) {
+                alertResp.innerText = "Abnormal: Pernafasan Kanak-kanak Kritikal!";
                 isRedTrigger = true;
-            } else if (respVal > 30 || respVal < 18) {
-                alertResp.innerText = "Sederhana Abnormal (Kanak-kanak)";
-                score += 1;
+            } else if (respVal < minRR || respVal > maxRR) {
+                alertResp.innerText = "Abnormal: Pernafasan Luar Julat Normal Kanak-kanak";
+                isYellowTrigger = true;
+                score += 2;
             }
         } else {
+            // Adult RR
             if (respVal > 25 || respVal < 10) {
                 alertResp.innerText = "Abnormal Dewasa: Pernafasan Bahaya!";
                 isRedTrigger = true;
@@ -723,10 +849,41 @@ function selectTriagePatient(qNum) {
     document.getElementById("alert-resp").innerText = "";
     document.getElementById("alert-spo2").innerText = "";
 
+    // Reset pregnancy section
+    const pregSec = document.getElementById("triage-pregnancy-section");
+    const isPregnantSelect = document.getElementById("triage-is-pregnant");
+    const poaContainer = document.getElementById("triage-poa-container");
+    const poaWeeksInput = document.getElementById("triage-poa-weeks");
+
+    isPregnantSelect.value = "Tidak";
+    poaWeeksInput.value = "";
+    poaContainer.style.display = "none";
+
+    if (gender === "Perempuan") {
+        pregSec.style.display = "block";
+    } else {
+        pregSec.style.display = "none";
+    }
+
     // Reset zone display
     const zoneDisplay = document.getElementById("triage-zone-display");
     zoneDisplay.className = "bmi-indicator bmi-normal";
     zoneDisplay.innerText = "ZON HIJAU (BIASA / KES RINGAN)";
+}
+
+function togglePoaInput() {
+    const isPregnant = document.getElementById("triage-is-pregnant").value;
+    const poaContainer = document.getElementById("triage-poa-container");
+    const poaWeeksInput = document.getElementById("triage-poa-weeks");
+
+    if (isPregnant === "Ya") {
+        poaContainer.style.display = "flex";
+        poaWeeksInput.required = true;
+    } else {
+        poaContainer.style.display = "none";
+        poaWeeksInput.required = false;
+        poaWeeksInput.value = "";
+    }
 }
 
 function calculateBMI() {
@@ -783,6 +940,22 @@ function submitTriage(e) {
     patient.SpO2 = parseInt(document.getElementById("triage-spo2").value);
     patient.Chief_Complaint = document.getElementById("triage-complaint").value;
 
+    // Capture pregnancy details if female
+    const { gender } = parseIC(patient.No_IC);
+    if (gender === "Perempuan") {
+        const isPregnant = document.getElementById("triage-is-pregnant").value;
+        patient.Mengandung = isPregnant;
+        if (isPregnant === "Ya") {
+            const poaWeeks = document.getElementById("triage-poa-weeks").value.trim();
+            patient.POA = poaWeeks ? `${poaWeeks}/52 POA` : "";
+        } else {
+            patient.POA = "";
+        }
+    } else {
+        patient.Mengandung = "Tidak";
+        patient.POA = "";
+    }
+
     // RUN ROUND-ROBIN ALLOCATION
     const activeRooms = statusBilik.filter(r => r.Status === "Aktif");
     if (activeRooms.length === 0) {
@@ -825,11 +998,33 @@ function submitTriage(e) {
     renderDatabaseTables();
 }
 
+// Doctor list passwords database mapped from NAMA DOKTOR UKKP
+const doctorPasswords = {
+    "DR. HASMAWATI BT MOHAMAD": "UKKP1",
+    "DR. MOHD SUKRI BIN SAIDINAL ALI": "UKKP2",
+    "DR. ZURAIHAN ZAFAKALI": "UKKP3",
+    "DR. SITI NUR FARHAN BINTI MOHAMED RASIDI": "UKKP4",
+    "DR. MUHAMMAD SYUKRAN BIN SAMSHUDAR": "UKKP5",
+    "DR. EILEEN FARHANA BINTI SHAIR": "UKKP6",
+    "DR. ASREMZEE BIN AB RAZAK": "UKKP7",
+    "DR. ZULZAIRE BIN ZULKEFLI": "UKKP8",
+    "DR. IZZUL IKHWAN BIN CHE ARIFIN": "UKKP9",
+    "DR. SITI ZAINAB BINTI ABDULLAH": "UKKP10"
+};
+
 // Doctor's Room Actions
 function openRoom(roomId) {
-    const drName = document.getElementById(`dr-name-${roomId}`).value.trim();
+    const drName = document.getElementById(`dr-name-${roomId}`).value;
+    const password = document.getElementById(`dr-password-${roomId}`).value.trim();
+
     if (!drName) {
-        alert("Sila masukkan nama doktor terlebih dahulu.");
+        alert("Sila pilih nama doktor terlebih dahulu.");
+        return;
+    }
+
+    const correctPassword = doctorPasswords[drName];
+    if (password !== correctPassword) {
+        alert("Kata laluan Doktor adalah salah!");
         return;
     }
 
@@ -837,7 +1032,7 @@ function openRoom(roomId) {
         No_Bilik: `Bilik ${roomId}`,
         Status: "Aktif",
         Nama_Doktor_Bertugas: drName,
-        Masa_Dibuka: new Date().toLocaleString('ms-MY')
+        Masa_Dibuka: new Date().toLocaleString('ms-MY') // Capturing exact sign-in timestamp (date & time)
     };
 
     saveLocalStorage();
@@ -857,6 +1052,32 @@ function closeRoom(roomId) {
     renderDatabaseTables();
 }
 
+// Auto Close rooms after 5 PM
+function checkAutoCloseRooms() {
+    const now = new Date();
+    const hrs = now.getHours();
+    
+    // Auto-close at or after 5 PM (17:00)
+    if (hrs >= 17) {
+        let changed = false;
+        for (let i = 0; i < statusBilik.length; i++) {
+            if (statusBilik[i].Status === "Aktif") {
+                statusBilik[i].Status = "Tutup";
+                statusBilik[i].Nama_Doktor_Bertugas = "";
+                statusBilik[i].Masa_Dibuka = "";
+                changed = true;
+            }
+        }
+        if (changed) {
+            saveLocalStorage();
+            renderDoctorPanels();
+            renderTvDisplay();
+            renderDatabaseTables();
+            console.log("Bilik-bilik doktor ditutup secara automatik selepas jam 5:00 Petang.");
+        }
+    }
+}
+
 function renderDoctorPanels() {
     for (let roomId = 1; roomId <= 3; roomId++) {
         const room = statusBilik[roomId - 1];
@@ -874,7 +1095,7 @@ function renderDoctorPanels() {
             
             // Populate room waiting list
             const roomWaitingList = document.getElementById(`dr-waiting-list-${roomId}`);
-            const patientsForRoom = masterData.filter(p => p.No_Bilik_Doktor === `Bilik ${roomId}` && p.Status_Giliran === "Menunggu Dr");
+            const patientsForRoom = masterData.filter(p => p.No_Bilik_Doktor === `Bilik ${roomId}` && p.Status_Giliran === "Menunggu Dr" && p.Tujuan_Kehadiran !== "NCD-Sample darah");
             
             roomWaitingList.innerHTML = "";
             if (patientsForRoom.length === 0) {
@@ -953,7 +1174,14 @@ function selectPatientForTreatment(roomId, qNum) {
     document.getElementById(`active-patient-name-${roomId}`).innerText = `${patient.Nombor_Giliran} (${patient.Nama_Penuh})`;
     document.getElementById(`active-purpose-${roomId}`).innerText = patient.Tujuan_Kehadiran || "-";
     document.getElementById(`active-bmi-${roomId}`).innerText = patient.BMI || "-";
-    document.getElementById(`active-vital-${roomId}`).innerText = `BP: ${patient.Tekanan_Darah} | HR: ${patient.Kadar_Nadi} | Temp: ${patient.Suhu_Badan}°C`;
+    
+    // Check if female and pregnant to show on vital line
+    let vitalText = `BP: ${patient.Tekanan_Darah} | HR: ${patient.Kadar_Nadi} | Temp: ${patient.Suhu_Badan}°C`;
+    if (patient.Mengandung === "Ya") {
+        vitalText += ` | Mengandung: Ya (${patient.POA || "-"})`;
+    }
+    
+    document.getElementById(`active-vital-${roomId}`).innerText = vitalText;
     document.getElementById(`active-complaint-${roomId}`).innerText = patient.Chief_Complaint || "-";
     
     // Store current patient number in panel dataset
@@ -1035,8 +1263,15 @@ function dischargePatient(roomId, disposition) {
 function updateClock() {
     const clockEl = document.getElementById("tv-clock");
     if (clockEl) {
-        clockEl.innerText = new Date().toLocaleTimeString('ms-MY');
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        const timeStr = now.toLocaleTimeString('ms-MY');
+        clockEl.innerText = `${dateStr} | ${timeStr}`;
     }
+    // Check registration constraints dynamically
+    checkRegistrationTimeConstraint();
+    // Auto-close doctor rooms after 5 PM
+    checkAutoCloseRooms();
 }
 
 function renderTvDisplay() {
@@ -1313,4 +1548,59 @@ function initCharts() {
             plugins: { legend: { display: false } }
         }
     });
+}
+
+function handleKkmChange() {
+    const kkmVal = document.getElementById("reg-kkm").value;
+    const labelJob = document.getElementById("label-job");
+    const labelDept = document.getElementById("label-dept");
+    const inputJob = document.getElementById("reg-job");
+    const inputDept = document.getElementById("reg-dept");
+
+    if (kkmVal === "Ya") {
+        labelJob.innerText = "Perjawatan";
+        inputJob.placeholder = "Cth: U29 / F41 / Pegawai Perubatan";
+        labelDept.innerText = "Bertugas di Jabatan";
+        inputDept.placeholder = "Cth: Jabatan Kecemasan / Wad Melor";
+    } else {
+        labelJob.innerText = "Pekerjaan";
+        inputJob.placeholder = "Cth: Guru / Peniaga / Kerani Swasta";
+        labelDept.innerText = "Tempat Bertugas";
+        inputDept.placeholder = "Cth: SK Kota Bharu / Kedai Runcit";
+    }
+}
+
+function checkRegistrationTimeConstraint() {
+    const form = document.getElementById("patient-registration-form");
+    const msg = document.getElementById("time-restriction-msg");
+    if (!form || !msg) return;
+
+    const now = new Date();
+    const hrs = now.getHours();
+    const mins = now.getMinutes();
+    const timeVal = hrs * 60 + mins; // current minutes of the day
+
+    // Constraints:
+    // Slot 1: 7:30 AM - 12:30 PM -> 450 to 750 minutes
+    // Slot 2: 2:00 PM - 4:30 PM -> 840 to 990 minutes
+    const slot1Start = 7 * 60 + 30;
+    const slot1End = 12 * 60 + 30;
+    const slot2Start = 14 * 60 + 0;
+    const slot2End = 16 * 60 + 30;
+
+    const isAllowed = (timeVal >= slot1Start && timeVal <= slot1End) || (timeVal >= slot2Start && timeVal <= slot2End);
+
+    const submitBtn = form.querySelector("button[type='submit']");
+    if (isAllowed) {
+        msg.style.display = "none";
+        if (submitBtn) submitBtn.disabled = false;
+        form.querySelectorAll("input, select").forEach(el => el.disabled = false);
+    } else {
+        msg.style.display = "block";
+        msg.innerText = "MAAF: Pendaftaran ditutup pada waktu ini. Waktu operasi pendaftaran: 7:30 Pagi - 12:30 Tengah Hari & 2:00 Petang - 4:30 Petang.";
+        if (submitBtn) submitBtn.disabled = true;
+        form.querySelectorAll("input, select").forEach(el => {
+            if (el.id !== "reg-kkm") el.disabled = true;
+        });
+    }
 }
