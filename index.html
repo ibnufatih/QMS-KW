@@ -146,9 +146,12 @@
                     <div style="display: inline-flex; align-items: center; justify-content: center; width: 50px; height: 50px; border-radius: 50%; background: rgba(59, 130, 246, 0.1); color: var(--primary); margin-bottom: 0.75rem;">
                         <i data-lucide="qr-code" style="width: 28px; height: 28px;"></i>
                     </div>
-                    <h3 style="font-size: 1.25rem; font-weight: 700; color: white;">Pendaftaran Klinik Warga</h3>
+                    <h3 style="font-size: 1.25rem; font-weight: 700; color: white;">Pendaftaran Klinik Warga HRPZ II</h3>
                     <p style="font-size: 0.8rem; color: var(--text-muted);">Sila lengkapkan butiran di bawah</p>
                 </div>
+
+                <!-- Registration closed message banner -->
+                <div id="time-restriction-msg" class="bmi-indicator bmi-obese" style="display: none; margin-bottom: 1.25rem; font-size: 0.85rem; padding: 0.75rem;"></div>
 
                 <form id="patient-registration-form" onsubmit="registerPatient(event)">
                     <div class="form-group">
@@ -163,8 +166,8 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="reg-kkm">Kakitangan KKM?</label>
-                        <select id="reg-kkm" class="form-control" required>
+                        <label for="reg-kkm">Kakitangan HRPZ II?</label>
+                        <select id="reg-kkm" class="form-control" onchange="handleKkmChange()" required>
                             <option value="" disabled selected>Pilih Jawapan</option>
                             <option value="Ya">Ya</option>
                             <option value="Tidak">Tidak</option>
@@ -172,12 +175,12 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="reg-job">Pekerjaan</label>
-                        <input type="text" id="reg-job" class="form-control" placeholder="Cth: Jururawat / Kerani" required>
+                        <label id="label-job" for="reg-job">Pekerjaan</label>
+                        <input type="text" id="reg-job" class="form-control" placeholder="Cth: Guru / Peniaga" required>
                     </div>
 
                     <div class="form-group">
-                        <label for="reg-dept">Jabatan</label>
+                        <label id="label-dept" for="reg-dept">Jabatan</label>
                         <input type="text" id="reg-dept" class="form-control" placeholder="Cth: Jabatan Kecemasan" required>
                     </div>
 
@@ -217,11 +220,20 @@
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card" style="margin-bottom: 1rem;">
                         <div class="card-title">
                             <i data-lucide="stethoscope"></i> Menunggu Panggilan Dr (<span id="count-dr-waiting-total">0</span>)
                         </div>
                         <div id="triage-dr-waiting-list" class="patient-list" style="max-height: 250px;">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">
+                            <i data-lucide="droplet" style="color: #ef4444;"></i> NCD - Sampel Darah (<span id="count-ncd-total">0</span>)
+                        </div>
+                        <div id="triage-ncd-list" class="patient-list" style="max-height: 250px;">
                             <!-- Populated by JavaScript -->
                         </div>
                     </div>
@@ -234,9 +246,28 @@
                             <i data-lucide="activity"></i> Penilaian Triage - <span id="triage-patient-title" style="color: var(--primary);"></span>
                         </div>
                         
-                        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; background: rgba(15, 23, 42, 0.5); padding: 0.75rem; border-radius: 8px; display: flex; justify-content: space-between; border: 1px solid var(--border-color);">
-                            <span>Umur: <strong id="triage-patient-age" style="color: white;">-</strong></span>
-                            <span>Jantina: <strong id="triage-patient-gender" style="color: white;">-</strong></span>
+                        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; background: rgba(15, 23, 42, 0.5); padding: 0.75rem; border-radius: 8px; display: flex; flex-direction: column; gap: 0.5rem; border: 1px solid var(--border-color);">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>Umur: <strong id="triage-patient-age" style="color: white;">-</strong></span>
+                                <span>Jantina: <strong id="triage-patient-gender" style="color: white;">-</strong></span>
+                            </div>
+                            <!-- Pregnancy section for female patients -->
+                            <div id="triage-pregnancy-section" style="display: none; border-top: 1px dashed var(--border-color); padding-top: 0.5rem; margin-top: 0.25rem;">
+                                <div style="display: flex; align-items: center; justify-content: space-between;">
+                                    <span style="font-weight: 600;">Adakah anda mengandung?</span>
+                                    <select id="triage-is-pregnant" class="form-control" style="width: auto; padding: 0.2rem 0.5rem; height: auto; font-size: 0.8rem;" onchange="togglePoaInput()">
+                                        <option value="Tidak">Tidak</option>
+                                        <option value="Ya">Ya</option>
+                                    </select>
+                                </div>
+                                <div id="triage-poa-container" style="display: none; margin-top: 0.5rem; align-items: center; justify-content: space-between;">
+                                    <span>Berapa POA? (Minggu)</span>
+                                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                                        <input type="number" id="triage-poa-weeks" class="form-control" style="width: 70px; padding: 0.2rem 0.5rem; height: auto; font-size: 0.8rem; text-align: center;" min="1" max="42" placeholder="Cth: 20">
+                                        <span style="font-size: 0.8rem; color: white; font-weight: bold;">/52 POA</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <form id="triage-form" onsubmit="submitTriage(event)">
@@ -256,6 +287,7 @@
                                         <option value="MS">Medical Surveillance (MS)</option>
                                         <option value="IM">Immunisation (IM)</option>
                                         <option value="OD">Occupational Disease (OD)</option>
+                                        <option value="NCD-Sample darah">NCD-Sample darah</option>
                                     </select>
                                 </div>
                             </div>
@@ -366,7 +398,23 @@
                     <div id="room-login-1" class="doctor-inactive-mask">
                         <div class="form-group">
                             <label>Nama Doktor Bertugas</label>
-                            <input type="text" id="dr-name-1" class="form-control" placeholder="Cth: Dr. Azmil">
+                            <select id="dr-name-1" class="form-control">
+                                <option value="" disabled selected>Pilih Nama Doktor</option>
+                                <option value="DR. HASMAWATI BT MOHAMAD">DR. HASMAWATI BT MOHAMAD</option>
+                                <option value="DR. MOHD SUKRI BIN SAIDINAL ALI">DR. MOHD SUKRI BIN SAIDINAL ALI</option>
+                                <option value="DR. ZURAIHAN ZAFAKALI">DR. ZURAIHAN ZAFAKALI</option>
+                                <option value="DR. SITI NUR FARHAN BINTI MOHAMED RASIDI">DR. SITI NUR FARHAN BINTI MOHAMED RASIDI</option>
+                                <option value="DR. MUHAMMAD SYUKRAN BIN SAMSHUDAR">DR. MUHAMMAD SYUKRAN BIN SAMSHUDAR</option>
+                                <option value="DR. EILEEN FARHANA BINTI SHAIR">DR. EILEEN FARHANA BINTI SHAIR</option>
+                                <option value="DR. ASREMZEE BIN AB RAZAK">DR. ASREMZEE BIN AB RAZAK</option>
+                                <option value="DR. ZULZAIRE BIN ZULKEFLI">DR. ZULZAIRE BIN ZULKEFLI</option>
+                                <option value="DR. IZZUL IKHWAN BIN CHE ARIFIN">DR. IZZUL IKHWAN BIN CHE ARIFIN</option>
+                                <option value="DR. SITI ZAINAB BINTI ABDULLAH">DR. SITI ZAINAB BINTI ABDULLAH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Kata Laluan (Password)</label>
+                            <input type="password" id="dr-password-1" class="form-control" placeholder="Kata Laluan Doktor">
                         </div>
                         <button class="btn btn-primary" onclick="openRoom(1)" style="width: 100%;">BUKA BILIK</button>
                     </div>
@@ -453,7 +501,23 @@
                     <div id="room-login-2" class="doctor-inactive-mask">
                         <div class="form-group">
                             <label>Nama Doktor Bertugas</label>
-                            <input type="text" id="dr-name-2" class="form-control" placeholder="Cth: Dr. Sarah">
+                            <select id="dr-name-2" class="form-control">
+                                <option value="" disabled selected>Pilih Nama Doktor</option>
+                                <option value="DR. HASMAWATI BT MOHAMAD">DR. HASMAWATI BT MOHAMAD</option>
+                                <option value="DR. MOHD SUKRI BIN SAIDINAL ALI">DR. MOHD SUKRI BIN SAIDINAL ALI</option>
+                                <option value="DR. ZURAIHAN ZAFAKALI">DR. ZURAIHAN ZAFAKALI</option>
+                                <option value="DR. SITI NUR FARHAN BINTI MOHAMED RASIDI">DR. SITI NUR FARHAN BINTI MOHAMED RASIDI</option>
+                                <option value="DR. MUHAMMAD SYUKRAN BIN SAMSHUDAR">DR. MUHAMMAD SYUKRAN BIN SAMSHUDAR</option>
+                                <option value="DR. EILEEN FARHANA BINTI SHAIR">DR. EILEEN FARHANA BINTI SHAIR</option>
+                                <option value="DR. ASREMZEE BIN AB RAZAK">DR. ASREMZEE BIN AB RAZAK</option>
+                                <option value="DR. ZULZAIRE BIN ZULKEFLI">DR. ZULZAIRE BIN ZULKEFLI</option>
+                                <option value="DR. IZZUL IKHWAN BIN CHE ARIFIN">DR. IZZUL IKHWAN BIN CHE ARIFIN</option>
+                                <option value="DR. SITI ZAINAB BINTI ABDULLAH">DR. SITI ZAINAB BINTI ABDULLAH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Kata Laluan (Password)</label>
+                            <input type="password" id="dr-password-2" class="form-control" placeholder="Kata Laluan Doktor">
                         </div>
                         <button class="btn btn-primary" onclick="openRoom(2)" style="width: 100%;">BUKA BILIK</button>
                     </div>
@@ -540,7 +604,23 @@
                     <div id="room-login-3" class="doctor-inactive-mask">
                         <div class="form-group">
                             <label>Nama Doktor Bertugas</label>
-                            <input type="text" id="dr-name-3" class="form-control" placeholder="Cth: Dr. Wong">
+                            <select id="dr-name-3" class="form-control">
+                                <option value="" disabled selected>Pilih Nama Doktor</option>
+                                <option value="DR. HASMAWATI BT MOHAMAD">DR. HASMAWATI BT MOHAMAD</option>
+                                <option value="DR. MOHD SUKRI BIN SAIDINAL ALI">DR. MOHD SUKRI BIN SAIDINAL ALI</option>
+                                <option value="DR. ZURAIHAN ZAFAKALI">DR. ZURAIHAN ZAFAKALI</option>
+                                <option value="DR. SITI NUR FARHAN BINTI MOHAMED RASIDI">DR. SITI NUR FARHAN BINTI MOHAMED RASIDI</option>
+                                <option value="DR. MUHAMMAD SYUKRAN BIN SAMSHUDAR">DR. MUHAMMAD SYUKRAN BIN SAMSHUDAR</option>
+                                <option value="DR. EILEEN FARHANA BINTI SHAIR">DR. EILEEN FARHANA BINTI SHAIR</option>
+                                <option value="DR. ASREMZEE BIN AB RAZAK">DR. ASREMZEE BIN AB RAZAK</option>
+                                <option value="DR. ZULZAIRE BIN ZULKEFLI">DR. ZULZAIRE BIN ZULKEFLI</option>
+                                <option value="DR. IZZUL IKHWAN BIN CHE ARIFIN">DR. IZZUL IKHWAN BIN CHE ARIFIN</option>
+                                <option value="DR. SITI ZAINAB BINTI ABDULLAH">DR. SITI ZAINAB BINTI ABDULLAH</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Kata Laluan (Password)</label>
+                            <input type="password" id="dr-password-3" class="form-control" placeholder="Kata Laluan Doktor">
                         </div>
                         <button class="btn btn-primary" onclick="openRoom(3)" style="width: 100%;">BUKA BILIK</button>
                     </div>
